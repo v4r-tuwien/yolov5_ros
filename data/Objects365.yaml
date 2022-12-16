@@ -13,7 +13,16 @@ train: images/train  # train images (relative to 'path') 1742289 images
 val: images/val # val images (relative to 'path') 80000 images
 test:  # test images (optional)
 
+# Selected Classes for Office Supplies / Tools:
+# extra: knife, broom, cup, bottle, glasses, 
+# exception: chainsaw, fire extinguisher, blackboard/whiteboard, ladder, globe
+#
+#
+# -> include_class = [44,157, 205, 299, 343, 54, 256, 169, 283, 306, 357, 170, 197, 297, 316, 346, 123, 231, 286, 281, 242, 292, 327, 84, 269, 10, 8, 7]
+
 # Classes
+#
+
 names:
   0: Person
   1: Sneakers

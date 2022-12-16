@@ -1,0 +1,6 @@
+Defaulting to user installation because normal site-packages is not writeable
+Requirement already satisfied: requests in /home/hoenig/.local/lib/python3.8/site-packages (2.28.1)
+Requirement already satisfied: certifi>=2017.4.17 in /usr/lib/python3/dist-packages (from requests) (2019.11.28)
+Requirement already satisfied: idna<4,>=2.5 in /usr/lib/python3/dist-packages (from requests) (2.8)
+Requirement already satisfied: charset-normalizer<3,>=2 in /home/hoenig/.local/lib/python3.8/site-packages (from requests) (2.1.1)
+Requirement already satisfied: urllib3<1.27,>=1.21.1 in /usr/lib/python3/dist-packages (from requests) (1.25.8)

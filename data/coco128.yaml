@@ -14,6 +14,7 @@ val: images/train2017  # val images (relative to 'path') 128 images
 test:  # test images (optional)
 
 # Classes
+
 names:
   0: person
   1: bicycle
@@ -95,7 +96,6 @@ names:
   77: teddy bear
   78: hair drier
   79: toothbrush
-
 
 # Download script/URL (optional)
 download: https://ultralytics.com/assets/coco128.zip

@@ -38,6 +38,7 @@ import rospy
 from std_msgs.msg import String, Float32MultiArray, Int64
 from sensor_msgs.msg import Image
 from sensor_msgs.msg import RegionOfInterest
+from vision_msgs.msg import Detection2D
 from cv_bridge import CvBridge, CvBridgeError
 
 FILE = Path(__file__).resolve()
@@ -62,7 +63,7 @@ class YOLOv5:
             self,
             weights=ROOT / 'yolov5s.pt',  # model path or triton URL
             source=ROOT / 'data/images',  # file/dir/URL/glob/screen/0(webcam)
-            data=ROOT / 'data/coco128.yaml',  # dataset.yaml path
+            data=ROOT / 'data/Objects365.yaml',  # dataset.yaml path
             imgsz=(640, 640),  # inference size (height, width)
             conf_thres=0.25,  # confidence threshold
             iou_thres=0.45,  # NMS IOU threshold
@@ -285,7 +286,7 @@ def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5s.pt', help='model path or triton URL')
     parser.add_argument('--source', type=str, default=ROOT / 'data/images', help='file/dir/URL/glob/screen/0(webcam)')
-    parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='(optional) dataset.yaml path')
+    parser.add_argument('--data', type=str, default=ROOT / 'data/Objects365.yaml', help='(optional) dataset.yaml path')
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
     parser.add_argument('--conf-thres', type=float, default=0.25, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='NMS IoU threshold')
