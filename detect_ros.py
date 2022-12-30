@@ -38,7 +38,11 @@ import rospy
 from std_msgs.msg import String, Float32MultiArray, Int64
 from sensor_msgs.msg import Image
 from sensor_msgs.msg import RegionOfInterest
+from vision_msgs.msg import Detection2DArray
 from vision_msgs.msg import Detection2D
+from vision_msgs.msg import BoundingBox2D
+from vision_msgs.msg import ObjectHypothesisWithPose
+from geometry_msgs.msg import Pose2D
 from cv_bridge import CvBridge, CvBridgeError
 
 FILE = Path(__file__).resolve()
@@ -64,7 +68,7 @@ class YOLOv5:
             weights=ROOT / 'yolov5s.pt',  # model path or triton URL
             source=ROOT / 'data/images',  # file/dir/URL/glob/screen/0(webcam)
             data=ROOT / 'data/Objects365.yaml',  # dataset.yaml path
-            imgsz=(640, 640),  # inference size (height, width)
+            imgsz=(480, 640),  # inference size (height, width)
             conf_thres=0.25,  # confidence threshold
             iou_thres=0.45,  # NMS IOU threshold
             max_det=1000,  # maximum detections per image
@@ -123,9 +127,9 @@ class YOLOv5:
         device = select_device(device)
         self.device = device
 
-        print("\n\n\n")
-        print(weights, device, dnn, data)
-        print("\n\n\n")
+        #print("\n\n\n")
+        #print(weights, device, dnn, data)
+        #print("\n\n\n")
 
         model = DetectMultiBackend(weights, device=device, dnn=dnn, data=data)
         self.model = model
@@ -157,6 +161,8 @@ class YOLOv5:
         self.pub_bounding_box = rospy.Publisher("/camera/color/bounding_box", RegionOfInterest, queue_size=10)
         self.pub_cropped_img = rospy.Publisher("/camera/color/cropped_img", Image, queue_size=10)
 
+        self.pub_detection2array = rospy.Publisher("/detection2d", Detection2DArray, queue_size=10)
+
         self.sub = rospy.Subscriber("/camera/color/image_raw", Image, self.callback_image)
 
         self.dt, self.seen = [0.0, 0.0, 0.0, 0.0], 0
@@ -175,7 +181,8 @@ class YOLOv5:
     def infer(self, im0s):
 
         t1 = time_sync()
-
+        height, width, channels = im0s.shape
+        
         img_size=(480,640)
         stride=32
 
@@ -207,7 +214,7 @@ class YOLOv5:
 
         # NMS
         pred = non_max_suppression(pred, self.conf_thres, self.iou_thres, self.classes, self.agnostic_nms, max_det=self.max_det)
-        
+
         self.dt[2] += time_sync() - t3
 
         # Second-stage classifier (optional)
@@ -218,7 +225,6 @@ class YOLOv5:
         s = ""
 
         for i, det in enumerate(pred):  # per image
-            
             self.seen += 1
 
             im0 = im0s.copy()
@@ -233,10 +239,37 @@ class YOLOv5:
 
                 # Publish the Bounding Box Info
                 bb = det[:, :4].cpu().detach().numpy()
-                bb = bb[0].astype(int)
-
+                det_cpu = det.cpu().detach().numpy()
+                print(det_cpu)
+                print()
                 print(bb)
+                print(len(bb))
+                print()
 
+                # Detection2D Messages in a loop
+                #
+                detection2darray_msg = Detection2DArray()
+                for detection in det_cpu:
+                    detection2d_msg = Detection2D()
+
+                    object_hypothesis = ObjectHypothesisWithPose()
+                    object_hypothesis.id = int(detection[5])
+                    object_hypothesis.score = detection[4]
+                    detection2d_msg.results.append(object_hypothesis)
+
+                    detection2d_msg.bbox.size_x = detection[3]-detection[1]
+                    detection2d_msg.bbox.size_y = detection[2]-detection[0]
+
+                    detection2d_msg.bbox.center.x = detection[0] + (detection[2] - detection[0])/2
+                    detection2d_msg.bbox.center.y = detection[1] + (detection[3] - detection[1])/2
+
+                    detection2darray_msg.detections.append(detection2d_msg)
+
+                self.pub_detection2array.publish(detection2darray_msg)
+
+                # Bounding Box only Message publish
+                #
+                bb = bb[0].astype(int)
                 bb_msg = RegionOfInterest()
                 bb_msg.x_offset = bb[0]
                 bb_msg.y_offset = bb[1]
@@ -267,6 +300,7 @@ class YOLOv5:
                         c = int(cls)  # integer class
                         label = None if self.hide_labels else (self.names[c] if self.hide_conf else f'{self.names[c]} {conf:.2f}')
                         annotator.box_label(xyxy, label, color=colors(c, True))
+
 
         # Stream results
         t4 = time_sync()
