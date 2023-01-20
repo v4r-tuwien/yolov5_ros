@@ -67,7 +67,7 @@ class YOLOv5:
             self,
             weights=ROOT / 'yolov5s.pt',  # model path or triton URL
             source=ROOT / 'data/images',  # file/dir/URL/glob/screen/0(webcam)
-            data=ROOT / 'data/Objects365.yaml',  # dataset.yaml path
+            data=ROOT / 'data/fleckerl.yaml',  # dataset.yaml path
             imgsz=(480, 640),  # inference size (height, width)
             conf_thres=0.25,  # confidence threshold
             iou_thres=0.45,  # NMS IOU threshold
@@ -92,6 +92,7 @@ class YOLOv5:
             half=False,  # use FP16 half-precision inference
             dnn=False,  # use OpenCV DNN for ONNX inference
             vid_stride=1,  # video frame-rate stride
+            camera_topic='/camera/color/image_raw',
                 ):
 
         # remember some stuff with member variables
@@ -108,6 +109,7 @@ class YOLOv5:
         self.classes = classes
         self.agnostic_nms = agnostic_nms
         self.max_det = max_det
+        self.camera_topic = camera_topic
 
         source = str(source)
         self.save_img = not nosave and not source.endswith('.txt')  # save inference images
@@ -127,9 +129,9 @@ class YOLOv5:
         device = select_device(device)
         self.device = device
 
-        #print("\n\n\n")
-        #print(weights, device, dnn, data)
-        #print("\n\n\n")
+        print("\n\n\n")
+        print(weights, device, dnn, data, camera_topic)
+        print("\n\n\n")
 
         model = DetectMultiBackend(weights, device=device, dnn=dnn, data=data)
         self.model = model
@@ -163,7 +165,7 @@ class YOLOv5:
 
         self.pub_detection2array = rospy.Publisher("/detection2d", Detection2DArray, queue_size=10)
 
-        self.sub = rospy.Subscriber("/camera/color/image_raw", Image, self.callback_image)
+        self.sub = rospy.Subscriber(camera_topic, Image, self.callback_image)
 
         self.dt, self.seen = [0.0, 0.0, 0.0, 0.0], 0
 
@@ -187,11 +189,9 @@ class YOLOv5:
         stride=32
 
         img = letterbox(im0s, self.img_size, stride=self.stride, auto=self.auto)[0]
-        #print(img.shape)
 
         # Convert
         img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
-        #print(img.shape)
         im = np.ascontiguousarray(img)
 
         bs = 1  # batch_size
@@ -201,7 +201,6 @@ class YOLOv5:
         im /= 255  # 0 - 255 to 0.0 - 1.0
         if len(im.shape) == 3:
             im = im[None]  # expand for batch dim
-        #print(im.shape)
         # Inference
         
         t2 = time_sync()
@@ -345,6 +344,8 @@ def parse_opt():
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
     parser.add_argument('--vid-stride', type=int, default=1, help='video frame-rate stride')
+    parser.add_argument('--camera-topic', type=str, default='/camera/color/image_raw', help='camera topic for input image')
+
     opt = parser.parse_args()
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
     print_args(vars(opt))
