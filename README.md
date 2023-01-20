@@ -31,4 +31,17 @@ Start realsense2 camera node:
 Start python YOLOv5 rosnode:  
 `python detect_ros.py --weights runs/train/exp39/weights/last.pt --data data/fleckerl.yaml --conf-thres 0.7 --camera-topic /camera/color/image_raw`
 
+## Docker:
+copy the runs folder into the root directory of the the cloned yolo directory  
+
+`bash docker_build.sh`  
+`bash docker_run.sh`  -> cd yolo; python detect_ros.py --weights runs/train/exp39/weights/last.pt --data data/fleckerl.yaml --conf-thres 0.7 --camera-topic /camera/color/image_raw
+`bash docker_run_realsense.sh`  -> roslaunch realsense2_camera rs_camera.launch  
+
+Open another window and execute: `` xhost +local:`docker inspect --format='{{ .Config.Hostname }}' yolo_rosv0` ``
+
+
+
+
+
 

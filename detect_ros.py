@@ -185,7 +185,7 @@ class YOLOv5:
         t1 = time_sync()
         height, width, channels = im0s.shape
         
-        img_size=(480,640)
+        #img_size=(480,640)
         stride=32
 
         img = letterbox(im0s, self.img_size, stride=self.stride, auto=self.auto)[0]
