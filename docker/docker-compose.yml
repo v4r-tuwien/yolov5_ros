@@ -1,0 +1,26 @@
+version: "2.3"
+
+services:
+  ros-master:
+    image: ros:noetic-ros-core
+    restart: unless-stopped
+    network_mode: host
+    ipc: host
+    environment:
+      - ROS_IP=127.0.0.1
+    command: stdbuf -o L roscore
+
+  yolo:
+    image: yolo_ros:latest
+    restart: unless-stopped
+    network_mode: host
+    ipc: host
+    environment:
+      - ROS_IP=127.0.0.1
+    command: 
+      - pip install -r yolo/requirements.txt 
+      - python yolo/detect_ros.py --weights runs/train/exp39/weights/last.pt --data data/fleckerl.yaml --conf-thres 0.7 --camera-topic /camera/color/image_raw
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /home/hoenig/iChores/yolov5:/root/yolo

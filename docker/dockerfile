@@ -80,22 +80,22 @@ RUN apt-get update && apt-get install --no-install-recommends -y --allow-unauthe
 RUN source ~/.bashrc
 
 # install yolov5 requirements
-pip install gitpython
-pip install ipython  # interactive notebook
-pip install matplotlib>=3.2.2
-pip install numpy>=1.18.5
-pip install opencv-python>=4.1.1
-pip install Pillow>=7.1.2
-pip install psutil  # system resources
-pip install PyYAML>=5.3.1
-pip install requests>=2.23.0
-pip install scipy>=1.4.1
-pip install thop>=0.1.1  # FLOPs computation
-pip install torch>=1.7.0  # see https://pytorch.org/get-started/locally (recommended)
-pip install torchvision>=0.8.1
-pip install tqdm>=4.64.0
-pip install tensorboard>=2.4.1
-pip install pandas>=1.1.4
-pip install seaborn>=0.11.0
+RUN pip install gitpython
+RUN pip install ipython  # interactive notebook
+RUN pip install matplotlib>=3.2.2
+RUN pip install numpy>=1.18.5
+RUN pip install opencv-python>=4.1.1
+RUN pip install Pillow>=7.1.2
+RUN pip install psutil  # system resources
+RUN pip install PyYAML>=5.3.1
+RUN pip install requests>=2.23.0
+RUN pip install scipy>=1.4.1
+RUN pip install thop>=0.1.1  # FLOPs computation
+RUN pip install torch>=1.7.0  # see https://pytorch.org/get-started/locally (recommended)
+RUN pip install torchvision>=0.8.1
+RUN pip install tqdm>=4.64.0
+RUN pip install tensorboard>=2.4.1
+RUN pip install pandas>=1.1.4
+RUN pip install seaborn>=0.11.0
 
 WORKDIR /root
