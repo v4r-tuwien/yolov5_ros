@@ -1,17 +1,17 @@
-# YOLOv5 for CaringRobots
-YOLOv5 with ROS implementation for workshop task of CaringRobotis project  
+# YOLOv5 - ROS / Intel RealSense
+YOLOv5 with ROS implementation for workshop tools  
 fleckerl.yaml dataset with the following objects:  
 
-0: coil
-1: glue
-2: marker
-3: measuring_tape
-4: multimeter
-5: paint_brush
-6: pliers
-7: ruler
-8: screwdriver
-9: tape
+0: coil  
+1: glue  
+2: marker  
+3: measuring_tape  
+4: multimeter  
+5: paint_brush  
+6: pliers  
+7: ruler  
+8: screwdriver  
+9: tape  
 10: wood_glue  
 
 ## Dataset generation:
@@ -32,16 +32,7 @@ Start python YOLOv5 rosnode:
 `python detect_ros.py --weights runs/train/exp39/weights/last.pt --data data/fleckerl.yaml --conf-thres 0.7 --camera-topic /camera/color/image_raw`
 
 ## Docker:
-copy the runs folder into the root directory of the the cloned yolo directory  
-
-`bash docker_build.sh`  
-`bash docker_run.sh`  -> cd yolo; python detect_ros.py --weights runs/train/exp39/weights/last.pt --data data/fleckerl.yaml --conf-thres 0.7 --camera-topic /camera/color/image_raw
-`bash docker_run_realsense.sh`  -> roslaunch realsense2_camera rs_camera.launch  
-
-Open another window and execute: `` xhost +local:`docker inspect --format='{{ .Config.Hostname }}' yolo_rosv0` ``
-
-
-
-
-
-
+- copy the runs folder into the root directory of the the cloned yolo directory  
+- adapt ./docker/docker-compose.yml for your personal use
+- `cd docker`
+- `docker-compose up`
