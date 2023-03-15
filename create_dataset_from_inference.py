@@ -164,20 +164,28 @@ class YOLOv5:
         self.dt, self.seen = [0.0, 0.0, 0.0, 0.0], 0
 
         # Dataset generation
+
         curr_dir = os.path.abspath("")
         print("Current working directory: ", curr_dir)
         dataset_path = os.path.join(curr_dir, "new_dataset")
-        os.mkdir(dataset_path)
+        if not os.path.exists(dataset_path):
+            os.mkdir(dataset_path)
 
-        splits = ["train", "val"]
-        for split in splits:
-            split_path = os.path.join(dataset_path, split)
-            os.mkdir(split_path)
-            os.mkdir(os.path.join(split_path, "images"))
-            os.mkdir(os.path.join(split_path, "labels"))
-            os.mkdir(os.path.join(split_path, "ann_images"))
+            splits = ["train", "val"]
+            for split in splits:
+                split_path = os.path.join(dataset_path, split)
+                os.mkdir(split_path)
+                os.mkdir(os.path.join(split_path, "images"))
+                os.mkdir(os.path.join(split_path, "labels"))
+                os.mkdir(os.path.join(split_path, "ann_images"))
 
-        self.cnt = 0    #counter for files
+            self.cnt = 0    #counter for files
+        else:
+            file_names = sorted(os.listdir(os.path.join(os.path.abspath(""), "new_dataset/train/images")), reverse=True)
+            print(file_names[0][:-4])
+            print(int(file_names[0][:-4]))
+            self.cnt = int(file_names[0][:-4]) + 1
+
         self.callback_cnt = 0
 
     def callback_image(self, msg):
@@ -283,15 +291,16 @@ class YOLOv5:
                         im_save = annotator.result()
                         cv2.imwrite("new_dataset/train/images/" + str(f"{self.cnt:06d}") + ".jpg", im0s)
                         cv2.imwrite("new_dataset/train/ann_images/" + str(f"{self.cnt:06d}") + ".jpg", im0)
+                        for *xyxy, conf, cls in reversed(det):
+                            #box = [det_cpu[:, 5]] + xyxy2xywhn(bb[0]).tolist()
+                            box = [det_cpu[:, 5]] + (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()
+                            # Write
+                            with open((os.path.join(os.path.abspath(""), "new_dataset/train/labels/") + str(f"{self.cnt:06d}") + ".txt"), 'a') as file:
+                                line = *(box),  # cls, box or segments
+                                file.write(('%g ' * len(line)).rstrip() % line + '\n')
 
-                        box = [det_cpu[:, 5]] + xyxy2xywhn(bb[0]).tolist()
-                        # Write
-                        with open((os.path.join(os.path.abspath(""), "new_dataset/train/labels/") + str(f"{self.cnt:06d}") + ".txt"), 'a') as file:
-                            line = *(box),  # cls, box or segments
-                            file.write(('%g ' * len(line)).rstrip() % line + '\n')
-
-                        self.callback_cnt = 0
-                        self.cnt += 1  
+                            self.callback_cnt = 0
+                            self.cnt += 1  
 
         # Stream results
         t4 = time_sync()
