@@ -48,6 +48,6 @@ services:
       - ROS_IP=127.0.0.1
       - DISPLAY
       - QT_X11_NO_MITSHM=1
-    command: bash -c "source catkin_ws/devel/setup.bash; python ./yolo/detect_ros.py --weights ./yolo/runs/train/exp40/weights/last.pt --data ./yolo/data/fleckerl.yaml --conf-thres 0.7 --camera-topic /camera/color/image_raw"
+    command: bash -c "source catkin_ws/devel/setup.bash; python ./yolo/detect_ros.py --weights ./yolo/runs/train/exp41/weights/last.pt --data ./yolo/data/fleckerl.yaml --conf-thres 0.8 --iou-thres 0.7 --camera-topic /camera/color/image_raw"
     stdin_open: true
     tty: true 
