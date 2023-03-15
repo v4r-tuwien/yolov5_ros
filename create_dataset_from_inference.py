@@ -54,7 +54,7 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 from models.common import DetectMultiBackend
 #from utils.datasets import IMG_FORMATS, VID_FORMATS, LoadImages, LoadStreams
 from utils.general import (LOGGER, check_file, check_img_size, check_imshow, check_requirements, colorstr,
-                           increment_path, non_max_suppression, print_args, scale_boxes, strip_optimizer, xyxy2xywh)
+                           increment_path, non_max_suppression, print_args, scale_boxes, strip_optimizer, xyxy2xywh, xyxy2xywhn)
 from utils.plots import Annotator, colors, save_one_box
 from utils.torch_utils import select_device, time_sync
 from utils.augmentations import Albumentations, augment_hsv, copy_paste, letterbox, mixup, random_perspective
@@ -156,18 +156,29 @@ class YOLOv5:
         self.model.warmup(imgsz=(1 if self.pt else bs, 3, *imgsz))  # warmup
         self.dt, self.seen = [0.0, 0.0, 0.0], 0
 
-
         # ROS Stuff
         self.bridge = CvBridge()
-
-        self.pub_bounding_box = rospy.Publisher("/camera/color/bounding_box", RegionOfInterest, queue_size=10)
-        self.pub_cropped_img = rospy.Publisher("/camera/color/cropped_img", Image, queue_size=10)
-
-        self.pub_detection2array = rospy.Publisher("/detection2d", Detection2DArray, queue_size=10)
 
         self.sub = rospy.Subscriber(camera_topic, Image, self.callback_image)
 
         self.dt, self.seen = [0.0, 0.0, 0.0, 0.0], 0
+
+        # Dataset generation
+        curr_dir = os.path.abspath("")
+        print("Current working directory: ", curr_dir)
+        dataset_path = os.path.join(curr_dir, "new_dataset")
+        os.mkdir(dataset_path)
+
+        splits = ["train", "val"]
+        for split in splits:
+            split_path = os.path.join(dataset_path, split)
+            os.mkdir(split_path)
+            os.mkdir(os.path.join(split_path, "images"))
+            os.mkdir(os.path.join(split_path, "labels"))
+            os.mkdir(os.path.join(split_path, "ann_images"))
+
+        self.cnt = 0    #counter for files
+        self.callback_cnt = 0
 
     def callback_image(self, msg):
         try:
@@ -216,12 +227,10 @@ class YOLOv5:
 
         self.dt[2] += time_sync() - t3
 
-        # Second-stage classifier (optional)
-        # pred = utils.general.apply_classifier(pred, classifier_model, im, im0s)
-
         # Process predictions
-
         s = ""
+
+        print("Length of prediction: ", len(pred))
 
         for i, det in enumerate(pred):  # per image
             self.seen += 1
@@ -245,44 +254,12 @@ class YOLOv5:
                 print(len(bb))
                 print()
 
-                # Detection2D Messages in a loop
-                #
-                detection2darray_msg = Detection2DArray()
-                for detection in det_cpu:
-                    detection2d_msg = Detection2D()
-
-                    object_hypothesis = ObjectHypothesisWithPose()
-                    object_hypothesis.id = int(detection[5])
-                    object_hypothesis.score = detection[4]
-                    detection2d_msg.results.append(object_hypothesis)
-
-                    detection2d_msg.bbox.size_x = detection[3]-detection[1]
-                    detection2d_msg.bbox.size_y = detection[2]-detection[0]
-
-                    detection2d_msg.bbox.center.x = detection[0] + (detection[2] - detection[0])/2
-                    detection2d_msg.bbox.center.y = detection[1] + (detection[3] - detection[1])/2
-
-                    detection2darray_msg.detections.append(detection2d_msg)
-
-                self.pub_detection2array.publish(detection2darray_msg)
-
-                # Bounding Box only Message publish
-                #
-                bb = bb[0].astype(int)
-                bb_msg = RegionOfInterest()
-                bb_msg.x_offset = bb[0]
-                bb_msg.y_offset = bb[1]
-                bb_msg.height = bb[3]
-                bb_msg.width = bb[2]
-
-                self.pub_bounding_box.publish(bb_msg)
-
                 # Publish the Cropped Image
                 #           x:      x+w         y:      y+h
                 #           bb[1]:  bb[3]       bb[0]:  bb[2]
-                crop = imc[bb[1]:bb[3], bb[0]:bb[2]]
+                bb_int = bb[0].astype(int)
+                crop = imc[bb_int[1]:bb_int[3], bb_int[0]:bb_int[2]]
                 cropped_img_msg = self.bridge.cv2_to_imgmsg(crop, encoding="passthrough")
-                self.pub_cropped_img.publish(cropped_img_msg)
 
                 # Print results
                 for c in det[:, -1].unique():
@@ -300,6 +277,21 @@ class YOLOv5:
                         label = None if self.hide_labels else (self.names[c] if self.hide_conf else f'{self.names[c]} {conf:.2f}')
                         annotator.box_label(xyxy, label, color=colors(c, True))
 
+                if len(det) == 1:
+                    self.callback_cnt += 1
+                    if self.callback_cnt == 30:
+                        im_save = annotator.result()
+                        cv2.imwrite("new_dataset/train/images/" + str(f"{self.cnt:06d}") + ".jpg", im0s)
+                        cv2.imwrite("new_dataset/train/ann_images/" + str(f"{self.cnt:06d}") + ".jpg", im0)
+
+                        box = [det_cpu[:, 5]] + xyxy2xywhn(bb[0]).tolist()
+                        # Write
+                        with open((os.path.join(os.path.abspath(""), "new_dataset/train/labels/") + str(f"{self.cnt:06d}") + ".txt"), 'a') as file:
+                            line = *(box),  # cls, box or segments
+                            file.write(('%g ' * len(line)).rstrip() % line + '\n')
+
+                        self.callback_cnt = 0
+                        self.cnt += 1  
 
         # Stream results
         t4 = time_sync()
@@ -313,7 +305,7 @@ class YOLOv5:
         # Print time (inference-only)
         #LOGGER.info(f'{s}Done. ({t3 - t2:.3f}s)')
         rospy.loginfo(f'Inference ({t3 - t2:.3f}s)')
-        rospy.loginfo(f'Callback ({t4 - t1:.3f}s)')        
+        rospy.loginfo(f'Callback ({t4 - t1:.3f}s)')      
 
 def parse_opt():
     parser = argparse.ArgumentParser()
