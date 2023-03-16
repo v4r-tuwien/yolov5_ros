@@ -140,6 +140,7 @@ class YOLOv5:
         self.auto = self.pt 
 
         self.imgsz = check_img_size(imgsz, s=self.stride)  # check image size
+        self.img_header = None
 
         # Half
         self.half = half
@@ -172,6 +173,7 @@ class YOLOv5:
     def callback_image(self, msg):
         try:
             img0 = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+            self.img_header = msg.header
         except CvBridgeError as e:
             print(e)
 
@@ -247,42 +249,46 @@ class YOLOv5:
 
                 # Detection2D Messages in a loop
                 #
-                detection2darray_msg = Detection2DArray()
-                for detection in det_cpu:
-                    detection2d_msg = Detection2D()
+                if self.pub_detection2array.get_num_connections() > 0:
 
-                    object_hypothesis = ObjectHypothesisWithPose()
-                    object_hypothesis.id = int(detection[5])
-                    object_hypothesis.score = detection[4]
-                    detection2d_msg.results.append(object_hypothesis)
+                    detection2darray_msg = Detection2DArray()
+                    detection2darray_msg.header = self.img_header
+                    for detection in det_cpu:
+                        detection2d_msg = Detection2D()
 
-                    detection2d_msg.bbox.size_x = detection[3]-detection[1]
-                    detection2d_msg.bbox.size_y = detection[2]-detection[0]
+                        object_hypothesis = ObjectHypothesisWithPose()
+                        object_hypothesis.id = int(detection[5])
+                        object_hypothesis.score = detection[4]
+                        detection2d_msg.results.append(object_hypothesis)
 
-                    detection2d_msg.bbox.center.x = detection[0] + (detection[2] - detection[0])/2
-                    detection2d_msg.bbox.center.y = detection[1] + (detection[3] - detection[1])/2
+                        detection2d_msg.bbox.size_x = detection[3]-detection[1]
+                        detection2d_msg.bbox.size_y = detection[2]-detection[0]
 
-                    detection2darray_msg.detections.append(detection2d_msg)
+                        detection2d_msg.bbox.center.x = detection[0] + (detection[2] - detection[0])/2
+                        detection2d_msg.bbox.center.y = detection[1] + (detection[3] - detection[1])/2
 
-                self.pub_detection2array.publish(detection2darray_msg)
+                        detection2darray_msg.detections.append(detection2d_msg)
+
+                    self.pub_detection2array.publish(detection2darray_msg)
 
                 # Bounding Box only Message publish
                 #
-                bb = bb[0].astype(int)
-                bb_msg = RegionOfInterest()
-                bb_msg.x_offset = bb[0]
-                bb_msg.y_offset = bb[1]
-                bb_msg.height = bb[3]
-                bb_msg.width = bb[2]
-
-                self.pub_bounding_box.publish(bb_msg)
+                if self.pub_bounding_box.get_num_connections() > 0:
+                    bb = bb[0].astype(int)
+                    bb_msg = RegionOfInterest()
+                    bb_msg.x_offset = bb[0]
+                    bb_msg.y_offset = bb[1]
+                    bb_msg.height = bb[3]
+                    bb_msg.width = bb[2]
+                    self.pub_bounding_box.publish(bb_msg)
 
                 # Publish the Cropped Image
                 #           x:      x+w         y:      y+h
                 #           bb[1]:  bb[3]       bb[0]:  bb[2]
-                crop = imc[bb[1]:bb[3], bb[0]:bb[2]]
-                cropped_img_msg = self.bridge.cv2_to_imgmsg(crop, encoding="passthrough")
-                self.pub_cropped_img.publish(cropped_img_msg)
+                if self.pub_cropped_img.get_num_connections() > 0:
+                    crop = imc[bb[1]:bb[3], bb[0]:bb[2]]
+                    cropped_img_msg = self.bridge.cv2_to_imgmsg(crop, encoding="passthrough")
+                    self.pub_cropped_img.publish(cropped_img_msg)
 
                 # Print results
                 for c in det[:, -1].unique():
