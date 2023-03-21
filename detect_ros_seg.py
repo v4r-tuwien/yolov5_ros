@@ -54,7 +54,7 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 from models.common import DetectMultiBackend
 #from utils.datasets import IMG_FORMATS, VID_FORMATS, LoadImages, LoadStreams
 from utils.general import (LOGGER, check_file, check_img_size, check_imshow, check_requirements, colorstr,
-                           increment_path, non_max_suppression, print_args, scale_boxes, strip_optimizer, xyxy2xywh, xyxy2xywhn)
+                           increment_path, non_max_suppression, print_args, scale_boxes, strip_optimizer, xyxy2xywh)
 from utils.plots import Annotator, colors, save_one_box
 from utils.torch_utils import select_device, time_sync
 from utils.augmentations import Albumentations, augment_hsv, copy_paste, letterbox, mixup, random_perspective
@@ -137,6 +137,7 @@ class YOLOv5:
         self.model = model
         self.stride, self.names, self.pt, self.jit, self.onnx, self.engine = self.model.stride, self.model.names, self.model.pt, self.model.jit, self.model.onnx, self.model.engine
 
+        
         self.auto = self.pt 
 
         self.imgsz = check_img_size(imgsz, s=self.stride)  # check image size
@@ -156,37 +157,18 @@ class YOLOv5:
         self.model.warmup(imgsz=(1 if self.pt else bs, 3, *imgsz))  # warmup
         self.dt, self.seen = [0.0, 0.0, 0.0], 0
 
+
         # ROS Stuff
         self.bridge = CvBridge()
+
+        self.pub_bounding_box = rospy.Publisher("/camera/color/bounding_box", RegionOfInterest, queue_size=10)
+        self.pub_cropped_img = rospy.Publisher("/camera/color/cropped_img", Image, queue_size=10)
+
+        self.pub_detection2array = rospy.Publisher("/detection2d", Detection2DArray, queue_size=10)
 
         self.sub = rospy.Subscriber(camera_topic, Image, self.callback_image)
 
         self.dt, self.seen = [0.0, 0.0, 0.0, 0.0], 0
-
-        # Dataset generation
-
-        curr_dir = os.path.abspath("")
-        print("Current working directory: ", curr_dir)
-        dataset_path = os.path.join(curr_dir, "new_dataset")
-        if not os.path.exists(dataset_path):
-            os.mkdir(dataset_path)
-
-            splits = ["train", "val"]
-            for split in splits:
-                split_path = os.path.join(dataset_path, split)
-                os.mkdir(split_path)
-                os.mkdir(os.path.join(split_path, "images"))
-                os.mkdir(os.path.join(split_path, "labels"))
-                os.mkdir(os.path.join(split_path, "ann_images"))
-
-            self.cnt = 0    #counter for files
-        else:
-            file_names = sorted(os.listdir(os.path.join(os.path.abspath(""), "new_dataset/train/images")), reverse=True)
-            print(file_names[0][:-4])
-            print(int(file_names[0][:-4]))
-            self.cnt = int(file_names[0][:-4]) + 1
-
-        self.callback_cnt = 0
 
     def callback_image(self, msg):
         try:
@@ -225,7 +207,7 @@ class YOLOv5:
         t2 = time_sync()
         self.dt[0] += t2 - t1
 
-        pred = self.model(im, augment=self.augment, visualize=False)
+        pred, proto = self.model(im, augment=self.augment, visualize=False)[:2]
 
         t3 = time_sync()
         self.dt[1] += t3 - t2
@@ -235,10 +217,12 @@ class YOLOv5:
 
         self.dt[2] += time_sync() - t3
 
-        # Process predictions
-        s = ""
+        # Second-stage classifier (optional)
+        # pred = utils.general.apply_classifier(pred, classifier_model, im, im0s)
 
-        print("Length of prediction: ", len(pred))
+        # Process predictions
+
+        s = ""
 
         for i, det in enumerate(pred):  # per image
             self.seen += 1
@@ -251,23 +235,8 @@ class YOLOv5:
             annotator = Annotator(im0, line_width=3, example=str(self.names))
             if len(det):
                 # Rescale boxes from img_size to im0 size
-                det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], im0.shape).round()
-
-                # Publish the Bounding Box Info
-                bb = det[:, :4].cpu().detach().numpy()
-                det_cpu = det.cpu().detach().numpy()
-                print(det_cpu)
-                print()
-                print(bb)
-                print(len(bb))
-                print()
-
-                # Publish the Cropped Image
-                #           x:      x+w         y:      y+h
-                #           bb[1]:  bb[3]       bb[0]:  bb[2]
-                bb_int = bb[0].astype(int)
-                crop = imc[bb_int[1]:bb_int[3], bb_int[0]:bb_int[2]]
-                cropped_img_msg = self.bridge.cv2_to_imgmsg(crop, encoding="passthrough")
+                print(det)
+                print(self.names)
 
                 # Print results
                 for c in det[:, -1].unique():
@@ -285,22 +254,6 @@ class YOLOv5:
                         label = None if self.hide_labels else (self.names[c] if self.hide_conf else f'{self.names[c]} {conf:.2f}')
                         annotator.box_label(xyxy, label, color=colors(c, True))
 
-                if len(det) == 1:
-                    self.callback_cnt += 1
-                    if self.callback_cnt == 10:
-                        im_save = annotator.result()
-                        cv2.imwrite("new_dataset/train/images/" + str(f"{self.cnt:06d}") + ".jpg", im0s)
-                        cv2.imwrite("new_dataset/train/ann_images/" + str(f"{self.cnt:06d}") + ".jpg", im0)
-                        for *xyxy, conf, cls in reversed(det):
-                            #box = [det_cpu[:, 5]] + xyxy2xywhn(bb[0]).tolist()
-                            box = [det_cpu[:, 5]] + (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()
-                            # Write
-                            with open((os.path.join(os.path.abspath(""), "new_dataset/train/labels/") + str(f"{self.cnt:06d}") + ".txt"), 'a') as file:
-                                line = *(box),  # cls, box or segments
-                                file.write(('%g ' * len(line)).rstrip() % line + '\n')
-
-                            self.callback_cnt = 0
-                            self.cnt += 1  
 
         # Stream results
         t4 = time_sync()
@@ -314,7 +267,7 @@ class YOLOv5:
         # Print time (inference-only)
         #LOGGER.info(f'{s}Done. ({t3 - t2:.3f}s)')
         rospy.loginfo(f'Inference ({t3 - t2:.3f}s)')
-        rospy.loginfo(f'Callback ({t4 - t1:.3f}s)')      
+        rospy.loginfo(f'Callback ({t4 - t1:.3f}s)')        
 
 def parse_opt():
     parser = argparse.ArgumentParser()
