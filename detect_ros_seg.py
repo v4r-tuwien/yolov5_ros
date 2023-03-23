@@ -236,6 +236,15 @@ class YOLOv5:
                     masks = process_mask(proto[i], det[:, 6:], det[:, :4], im.shape[2:], upsample=True)  # HWC
                     det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], im0.shape).round()  # rescale boxes to im0 size
             
+                bbox = det[:, :4].cpu().detach().numpy()
+                confidence = det[:, :5].cpu().detach().numpy()
+                class_label = det[:, :6].cpu().detach().numpy()
+
+                print(bbox)
+                print(confidence[0][4])
+                print(self.names[int(class_label[0][5])])
+                #print(self.names[int(class_label)])
+                print()
                 # Rescale boxes from img_size to im0 size
                 #print(det)
 
