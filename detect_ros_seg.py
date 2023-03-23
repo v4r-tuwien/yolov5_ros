@@ -1,4 +1,7 @@
 # YOLOv5 🚀 by Ultralytics, GPL-3.0 license
+
+#python detect_ros_seg.py --weights runs/train-seg/exp14/weights/last.pt --data data/ycbv.yaml --camera-topic /camera/color/image_raw --conf-thres 0.9 --iou-thres 0.6
+
 """
 Run inference on images, videos, directories, streams, etc.
 
@@ -54,11 +57,12 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 from models.common import DetectMultiBackend
 #from utils.datasets import IMG_FORMATS, VID_FORMATS, LoadImages, LoadStreams
 from utils.general import (LOGGER, check_file, check_img_size, check_imshow, check_requirements, colorstr,
-                           increment_path, non_max_suppression, print_args, scale_boxes, strip_optimizer, xyxy2xywh)
+                           increment_path, non_max_suppression, print_args, scale_boxes, scale_segments, strip_optimizer, xyxy2xywh)
 from utils.plots import Annotator, colors, save_one_box
 from utils.torch_utils import select_device, time_sync
 from utils.augmentations import Albumentations, augment_hsv, copy_paste, letterbox, mixup, random_perspective
 from utils.get_ros_image import LoadROSImage
+from utils.segment.general import masks2segments, process_mask, process_mask_native
 from utils.torch_utils import select_device, smart_inference_mode
 
 class YOLOv5:
@@ -92,6 +96,7 @@ class YOLOv5:
             half=False,  # use FP16 half-precision inference
             dnn=False,  # use OpenCV DNN for ONNX inference
             vid_stride=1,  # video frame-rate stride
+            retina_masks=True,
             camera_topic='/camera/color/image_raw',
                 ):
 
@@ -102,6 +107,7 @@ class YOLOv5:
         self.save_conf = save_conf
         self.save_crop = save_crop
         self.view_img = view_img
+        self.line_thickness = line_thickness
         self.hide_labels = hide_labels
         self.hide_conf = hide_conf
         self.conf_thres= conf_thres
@@ -109,17 +115,11 @@ class YOLOv5:
         self.classes = classes
         self.agnostic_nms = agnostic_nms
         self.max_det = max_det
+        self.retina_masks = retina_masks
         self.camera_topic = camera_topic
 
         source = str(source)
         self.save_img = not nosave and not source.endswith('.txt')  # save inference images
-        '''
-        is_file = Path(source).suffix[1:] in (IMG_FORMATS + VID_FORMATS)
-        is_url = source.lower().startswith(('rtsp://', 'rtmp://', 'http://', 'https://'))
-        webcam = source.isnumeric() or source.endswith('.txt') or (is_url and not is_file)
-        if is_url and is_file:
-            source = check_file(source)  # download
-        '''
 
         # Directories
         save_dir = increment_path(Path(project) / name, exist_ok=exist_ok)  # increment run
@@ -149,9 +149,6 @@ class YOLOv5:
             self.model.model.half() if half else self.model.model.float()
         
         bs = 1  # batch_size
-        
-        
-        #vid_path, vid_writer = [None] * bs, [None] * bs
 
         # Run inference
         self.model.warmup(imgsz=(1 if self.pt else bs, 3, *imgsz))  # warmup
@@ -206,19 +203,16 @@ class YOLOv5:
         
         t2 = time_sync()
         self.dt[0] += t2 - t1
-
-        pred, proto = self.model(im, augment=self.augment, visualize=False)[:2]
+        
+        pred, proto = self.model(im, augment=self.augment)[:2]
 
         t3 = time_sync()
         self.dt[1] += t3 - t2
 
         # NMS
-        pred = non_max_suppression(pred, self.conf_thres, self.iou_thres, self.classes, self.agnostic_nms, max_det=self.max_det)
+        pred = non_max_suppression(pred, self.conf_thres, self.iou_thres, self.classes, self.agnostic_nms, max_det=self.max_det, nm=32)
 
         self.dt[2] += time_sync() - t3
-
-        # Second-stage classifier (optional)
-        # pred = utils.general.apply_classifier(pred, classifier_model, im, im0s)
 
         # Process predictions
 
@@ -232,28 +226,46 @@ class YOLOv5:
             s += '%gx%g ' % im.shape[2:]  # print string
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
             imc = im0s  # for save_crop
-            annotator = Annotator(im0, line_width=3, example=str(self.names))
+            annotator = Annotator(im0, line_width=self.line_thickness, example=str(self.names))
             if len(det):
+                if self.retina_masks:
+                    # scale bbox first the crop masks
+                    det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], im0.shape).round()  # rescale boxes to im0 size
+                    masks = process_mask_native(proto[i], det[:, 6:], det[:, :4], im0.shape[:2])  # HWC
+                else:
+                    masks = process_mask(proto[i], det[:, 6:], det[:, :4], im.shape[2:], upsample=True)  # HWC
+                    det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], im0.shape).round()  # rescale boxes to im0 size
+            
                 # Rescale boxes from img_size to im0 size
-                print(det)
-                print(self.names)
+                #print(det)
 
+                # Segments
+                segments = [
+                    scale_segments(im0.shape if self.retina_masks else im.shape[2:], x, im0.shape, normalize=True)
+                    for x in reversed(masks2segments(masks))]
+                    
                 # Print results
-                for c in det[:, -1].unique():
-                    n = (det[:, -1] == c).sum()  # detections per class
+                for c in det[:, 5].unique():
+                    n = (det[:, 5] == c).sum()  # detections per class
                     s += f"{n} {self.names[int(c)]}{'s' * (n > 1)}, "  # add to string
 
+                # Mask plotting
+                annotator.masks(
+                    masks,
+                    colors=[colors(x, True) for x in det[:, 5]],
+                    im_gpu=torch.as_tensor(im0, dtype=torch.float16).to(self.device).permute(2, 0, 1).flip(0).contiguous() /
+                    255 if self.retina_masks else im[i])
+
                 # Write results
-                for *xyxy, conf, cls in reversed(det):
-                    if self.save_txt:  # Write to file
-                        xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
-                        line = (cls, *xywh, conf) if self.save_conf else (cls, *xywh)  # label format
+                for j, (*xyxy, conf, cls) in enumerate(reversed(det[:, :6])):
+                    seg = segments[j].reshape(-1)  # (n,2) to (n*2)
+                    line = (cls, *seg, conf) if self.save_conf else (cls, *seg)  # label format
 
                     if self.save_img or self.save_crop or self.view_img:  # Add bbox to image
                         c = int(cls)  # integer class
                         label = None if self.hide_labels else (self.names[c] if self.hide_conf else f'{self.names[c]} {conf:.2f}')
                         annotator.box_label(xyxy, label, color=colors(c, True))
-
+                        # annotator.draw.polygon(segments[j], outline=colors(c, True), width=3)
 
         # Stream results
         t4 = time_sync()
