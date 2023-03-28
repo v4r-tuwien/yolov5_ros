@@ -1,0 +1,32 @@
+version: '2.4'
+
+services:
+
+  master:
+    image: ros:noetic-ros-core
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - ROS_MASTER_URI=http://127.0.0.1:11311
+      - ROS_IP=127.0.0.1
+    command: roscore
+
+  camera:
+    image: realsense
+    privileged: true
+    build:
+      context: . 
+      dockerfile: dockerfile
+    network_mode: "host"
+    runtime: "nvidia"
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    environment:
+      - ROS_MASTER_URI=http://127.0.0.1:11311
+      - ROS_IP=127.0.0.1
+      - DISPLAY
+      - QT_X11_NO_MITSHM=1
+    command: bash -c "source catkin_ws/devel/setup.bash; roslaunch --wait realsense2_camera rs_camera.launch"
+    stdin_open: true
+    tty: true 

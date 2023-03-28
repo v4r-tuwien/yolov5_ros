@@ -48,6 +48,10 @@ from vision_msgs.msg import ObjectHypothesisWithPose
 from geometry_msgs.msg import Pose2D
 from cv_bridge import CvBridge, CvBridgeError
 
+from std_msgs.msg import Header
+from object_detector_msgs.msg import BoundingBox, Detection, Detections
+from object_detector_msgs.srv import detectron2_service_server
+
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
 if str(ROOT) not in sys.path:
@@ -161,7 +165,8 @@ class YOLOv5:
         self.pub_bounding_box = rospy.Publisher("/camera/color/bounding_box", RegionOfInterest, queue_size=10)
         self.pub_cropped_img = rospy.Publisher("/camera/color/cropped_img", Image, queue_size=10)
 
-        self.pub_detection2array = rospy.Publisher("/detection2d", Detection2DArray, queue_size=10)
+        self.pub_detection2array = rospy.Publisher("/yolov5/detection2d", Detection2DArray, queue_size=10)
+        self.pub_detections = rospy.Publisher("/yolov5/detections", Detections, queue_size=10)
 
         self.sub = rospy.Subscriber(camera_topic, Image, self.callback_image)
 
@@ -217,6 +222,7 @@ class YOLOv5:
         # Process predictions
 
         s = ""
+        detections = []
 
         for i, det in enumerate(pred):  # per image
             self.seen += 1
@@ -236,17 +242,40 @@ class YOLOv5:
                     masks = process_mask(proto[i], det[:, 6:], det[:, :4], im.shape[2:], upsample=True)  # HWC
                     det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], im0.shape).round()  # rescale boxes to im0 size
             
+                detection = Detection()
+            
                 bbox = det[:, :4].cpu().detach().numpy()
                 confidence = det[:, :5].cpu().detach().numpy()
                 class_label = det[:, :6].cpu().detach().numpy()
 
-                print(bbox)
-                print(confidence[0][4])
-                print(self.names[int(class_label[0][5])])
-                #print(self.names[int(class_label)])
-                print()
-                # Rescale boxes from img_size to im0 size
-                #print(det)
+                #print(bbox[0])
+                #print(confidence[0][4])
+                #print(self.model.names[int(class_label[0][5])])
+
+                # ---
+                detection.name = self.model.names[int(class_label[0][5])]
+                # ---
+
+                # ---            
+                bbox_msg = BoundingBox()
+                bbox_msg.ymin = int(bbox[0][0])
+                bbox_msg.xmin = int(bbox[0][1])
+                bbox_msg.ymax = int(bbox[0][2])
+                bbox_msg.xmax = int(bbox[0][3])
+                detection.bbox = bbox_msg
+                # ---
+                #TODO mask!
+                            # ---
+                # mask = masks[:, :, i]
+                # mask_ids = np.argwhere(mask.reshape((height * width)) > 0)
+                # detection.mask = list(mask_ids.flat)
+                # ---
+
+                # ---
+                detection.score = confidence[0][4]
+                # ---
+                # 
+                detections.append(detection)      
 
                 # Segments
                 segments = [
@@ -275,6 +304,11 @@ class YOLOv5:
                         label = None if self.hide_labels else (self.names[c] if self.hide_conf else f'{self.names[c]} {conf:.2f}')
                         annotator.box_label(xyxy, label, color=colors(c, True))
                         # annotator.draw.polygon(segments[j], outline=colors(c, True), width=3)
+        
+        ros_detections = Detections()
+        ros_detections.width, ros_detections.height = 640, 480
+        ros_detections.detections = detections
+        self.pub_detections.publish(ros_detections)
 
         # Stream results
         t4 = time_sync()
