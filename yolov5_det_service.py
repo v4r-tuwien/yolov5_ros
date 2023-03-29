@@ -114,9 +114,11 @@ if __name__ == "__main__":
                 print(bbox[0])
                 print(confidence[0][4])
                 print(model.names[int(class_label[0][5])])
+                print(class_label[0][5])
 
                 # ---
-                detection.name = model.names[int(class_label[0][5])]
+                #detection.name = model.names[int(class_label[0][5])]
+                detection.name = str(int(class_label[0][5]))
                 # ---
 
                 # ---            
