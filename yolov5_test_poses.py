@@ -30,10 +30,13 @@ def get_poses():
     detections = detect(rgb)
     print(detections)
     print('Detection completed, now Pose Estimation ...')
-    poses = estimate_pose(detections[0], rgb, depth)
-    print(poses)
-    print('Got the poses, now from the beginning...')
-
+    if len(detections) > 0:
+        poses = estimate_pose(detections[0], rgb, depth)
+        print(poses)
+        print('Got the poses, now from the beginning...')
+    else:
+        print("no pose ...")
+        
 if __name__ == "__main__":
     rospy.init_node("get_poses")
     r = rospy.Rate(10)

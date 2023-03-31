@@ -95,6 +95,8 @@ if __name__ == "__main__":
         # NMS
         pred = non_max_suppression(pred, conf_thres, iou_thres, None, False, max_det=1000, nm=32)
 
+        annotator = Annotator(img0, line_width=3, example=str(model.names))
+
         # Process predictions
         #obj_ids, rois, masks, scores = maskrcnn.detect(rgb)
 
@@ -123,10 +125,10 @@ if __name__ == "__main__":
 
                 # ---            
                 bbox_msg = BoundingBox()
-                bbox_msg.ymin = int(bbox[0][0])
-                bbox_msg.xmin = int(bbox[0][1])
-                bbox_msg.ymax = int(bbox[0][2])
-                bbox_msg.xmax = int(bbox[0][3])
+                bbox_msg.xmin = int(bbox[0][0])
+                bbox_msg.ymin = int(bbox[0][1])
+                bbox_msg.xmax = int(bbox[0][2])
+                bbox_msg.ymax = int(bbox[0][3])
                 detection.bbox = bbox_msg
                 # ---
                 #TODO mask!

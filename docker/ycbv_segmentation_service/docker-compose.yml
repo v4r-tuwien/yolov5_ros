@@ -19,6 +19,6 @@ services:
       - ROS_IP=127.0.0.1
       - DISPLAY
       - QT_X11_NO_MITSHM=1
-    command: bash -c "source /opt/ros/noetic/setup.bash; source catkin_ws/devel/setup.bash; python ./yolo/yolov5_det_service.py"
+    command: bash -c "source catkin_ws/devel/setup.bash; python ./yolo/detect_ros_seg.py --weights ./yolo/runs/train-seg/exp14/weights/last.pt --data ./yolo/data/ycbv.yaml --conf-thres 0.9 --iou-thres 0.7 --camera-topic /camera/color/image_raw"
     stdin_open: true
     tty: true 

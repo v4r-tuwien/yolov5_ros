@@ -164,11 +164,11 @@ class YOLOv5:
 
         self.pub_bounding_box = rospy.Publisher("/camera/color/bounding_box", RegionOfInterest, queue_size=10)
         self.pub_cropped_img = rospy.Publisher("/camera/color/cropped_img", Image, queue_size=10)
-
-        self.pub_detection2array = rospy.Publisher("/yolov5/detection2d", Detection2DArray, queue_size=10)
+        # self.pub_detection2array = rospy.Publisher("/yolov5/detection2d", Detection2DArray, queue_size=10)
         self.pub_detections = rospy.Publisher("/yolov5/detections", Detections, queue_size=10)
 
-        self.sub = rospy.Subscriber(camera_topic, Image, self.callback_image)
+        #self.sub = rospy.Subscriber(camera_topic, Image, self.callback_image)
+        self.service = rospy.Service("detect_objects_yolov5", detectron2_service_server, service_call)
 
         self.dt, self.seen = [0.0, 0.0, 0.0, 0.0], 0
 
@@ -180,7 +180,21 @@ class YOLOv5:
 
         #img0 = cv2.transpose(img0)
 
-        self.infer(img0)    
+        ros_detections = self.infer(img0) 
+        self.pub_detections.publish(ros_detections)   
+
+    def service_call(self, req):
+        rgb = req.image
+        width, height = rgb.width, rgb.height
+        assert width == 640 and height == 480
+
+        try:
+            img0 = bridge.imgmsg_to_cv2(rgb, "bgr8")
+        except CvBridgeError as e:
+            print(e)
+
+        ros_detections = self.infer(img0) 
+        return ros_detections
 
     @smart_inference_mode()
     def infer(self, im0s):
@@ -304,11 +318,11 @@ class YOLOv5:
                         label = None if self.hide_labels else (self.names[c] if self.hide_conf else f'{self.names[c]} {conf:.2f}')
                         annotator.box_label(xyxy, label, color=colors(c, True))
                         # annotator.draw.polygon(segments[j], outline=colors(c, True), width=3)
+                        
         
         ros_detections = Detections()
         ros_detections.width, ros_detections.height = 640, 480
         ros_detections.detections = detections
-        self.pub_detections.publish(ros_detections)
 
         # Stream results
         t4 = time_sync()
@@ -322,7 +336,9 @@ class YOLOv5:
         # Print time (inference-only)
         #LOGGER.info(f'{s}Done. ({t3 - t2:.3f}s)')
         rospy.loginfo(f'Inference ({t3 - t2:.3f}s)')
-        rospy.loginfo(f'Callback ({t4 - t1:.3f}s)')        
+        rospy.loginfo(f'Callback ({t4 - t1:.3f}s)')    
+
+        return ros_detections    
 
 def parse_opt():
     parser = argparse.ArgumentParser()
