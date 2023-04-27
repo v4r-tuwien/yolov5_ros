@@ -1,0 +1,3 @@
+[submodule "docker/realsense_ros_docker"]
+	path = docker/realsense_ros_docker
+	url = https://github.com/hoenigpeter/realsense_ros_docker.git
