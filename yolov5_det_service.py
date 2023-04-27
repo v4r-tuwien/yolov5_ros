@@ -112,15 +112,18 @@ if __name__ == "__main__":
                 bbox = det[:, :4].cpu().detach().numpy()
                 confidence = det[:, :5].cpu().detach().numpy()
                 class_label = det[:, :6].cpu().detach().numpy()
+                masks = masks.cpu().detach().numpy()
 
                 print(bbox[0])
                 print(confidence[0][4])
                 print(model.names[int(class_label[0][5])])
                 print(class_label[0][5])
+                print(masks)
+                print(masks[0].shape)
 
                 # ---
-                #detection.name = model.names[int(class_label[0][5])]
-                detection.name = str(int(class_label[0][5]))
+                detection.name = model.names[int(class_label[0][5])]
+                #detection.name = str(int(class_label[0][5])+1)
                 # ---
 
                 # ---            
@@ -133,9 +136,10 @@ if __name__ == "__main__":
                 # ---
                 #TODO mask!
                             # ---
-                # mask = masks[:, :, i]
-                # mask_ids = np.argwhere(mask.reshape((height * width)) > 0)
-                # detection.mask = list(mask_ids.flat)
+                #mask = masks[0][:, :, i]
+                mask = masks[0]
+                mask_ids = np.argwhere(mask.reshape((height * width)) > 0)
+                detection.mask = list(mask_ids.flat)
                 # ---
 
                 # ---
@@ -153,7 +157,7 @@ if __name__ == "__main__":
 
 
     rospy.init_node("detection_yolov5")
-    s = rospy.Service("detect_objects_yolov5", detectron2_service_server, detect)
+    s = rospy.Service("detect_objects", detectron2_service_server, detect)
     print("Detection with YOLOv5 ready.")
 
     rospy.spin()

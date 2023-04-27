@@ -161,14 +161,8 @@ class YOLOv5:
 
         # ROS Stuff
         self.bridge = CvBridge()
-
-        self.pub_bounding_box = rospy.Publisher("/camera/color/bounding_box", RegionOfInterest, queue_size=10)
-        self.pub_cropped_img = rospy.Publisher("/camera/color/cropped_img", Image, queue_size=10)
-        # self.pub_detection2array = rospy.Publisher("/yolov5/detection2d", Detection2DArray, queue_size=10)
         self.pub_detections = rospy.Publisher("/yolov5/detections", Detections, queue_size=10)
-
-        #self.sub = rospy.Subscriber(camera_topic, Image, self.callback_image)
-        self.service = rospy.Service("detect_objects_yolov5", detectron2_service_server, service_call)
+        self.service = rospy.Service("detect_objects", detectron2_service_server, self.service_call)
 
         self.dt, self.seen = [0.0, 0.0, 0.0, 0.0], 0
 
@@ -177,8 +171,6 @@ class YOLOv5:
             img0 = self.bridge.imgmsg_to_cv2(msg, "bgr8")
         except CvBridgeError as e:
             print(e)
-
-        #img0 = cv2.transpose(img0)
 
         ros_detections = self.infer(img0) 
         self.pub_detections.publish(ros_detections)   
@@ -189,7 +181,7 @@ class YOLOv5:
         assert width == 640 and height == 480
 
         try:
-            img0 = bridge.imgmsg_to_cv2(rgb, "bgr8")
+            img0 = self.bridge.imgmsg_to_cv2(rgb, "bgr8")
         except CvBridgeError as e:
             print(e)
 
@@ -256,18 +248,15 @@ class YOLOv5:
                     masks = process_mask(proto[i], det[:, 6:], det[:, :4], im.shape[2:], upsample=True)  # HWC
                     det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], im0.shape).round()  # rescale boxes to im0 size
             
+                masks_cpu = masks.cpu().detach().numpy()
                 detection = Detection()
             
                 bbox = det[:, :4].cpu().detach().numpy()
                 confidence = det[:, :5].cpu().detach().numpy()
                 class_label = det[:, :6].cpu().detach().numpy()
 
-                #print(bbox[0])
-                #print(confidence[0][4])
-                #print(self.model.names[int(class_label[0][5])])
-
                 # ---
-                detection.name = self.model.names[int(class_label[0][5])]
+                detection.name = self.names[int(class_label[0][5])]
                 # ---
 
                 # ---            
@@ -278,11 +267,11 @@ class YOLOv5:
                 bbox_msg.xmax = int(bbox[0][3])
                 detection.bbox = bbox_msg
                 # ---
-                #TODO mask!
-                            # ---
-                # mask = masks[:, :, i]
-                # mask_ids = np.argwhere(mask.reshape((height * width)) > 0)
-                # detection.mask = list(mask_ids.flat)
+                # mask
+                # ---
+                mask = masks_cpu[0]
+                mask_ids = np.argwhere(mask.reshape((height * width)) > 0)
+                detection.mask = list(mask_ids.flat)
                 # ---
 
                 # ---
@@ -330,8 +319,8 @@ class YOLOv5:
 
         im0 = annotator.result()
 
-        cv2.imshow("result", im0)
-        cv2.waitKey(1)  # 1 millisecond
+        #cv2.imshow("result", im0)
+        #cv2.waitKey(1)  # 1 millisecond
 
         # Print time (inference-only)
         #LOGGER.info(f'{s}Done. ({t3 - t2:.3f}s)')
