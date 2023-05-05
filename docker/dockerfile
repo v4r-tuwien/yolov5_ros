@@ -1,4 +1,4 @@
-FROM nvidia/cudagl:11.3.0-devel-ubuntu20.04
+FROM nvidia/cuda:11.3.0-runtime-ubuntu20.04
 
 ENV DEBIAN_FRONTEND noninteractive
 
@@ -32,9 +32,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 SHELL ["/bin/bash", "-c"]
-RUN source /opt/ros/noetic/setup.bash
 RUN echo "source /opt/ros/noetic/setup.bash" >> ~/.bashrc
-RUN source ~/.bashrc
 
 # install python dependencies
 RUN apt-get update \
@@ -57,48 +55,26 @@ RUN sudo rosdep init
 RUN rosdep update
 RUN mkdir -p /root/catkin_ws/src
 RUN cd /root/catkin_ws/
-RUN source ~/.bashrc
 RUN /bin/bash -c  '. /opt/ros/noetic/setup.bash; cd /root/catkin_ws; catkin config -DPYTHON_EXECUTABLE=/usr/bin/python3 -DPYTHON_INCLUDE_DIR=/usr/include/python3.6m -DPYTHON_LIBRARY=/usr/lib/x86_64-linux-gnu/libpython3.6m.so; catkin build'
-#RUN catkin_make
 
 # install realsense viewer
-RUN apt-get update && apt-get install --no-install-recommends -y --allow-unauthenticated \
-     software-properties-common \
-     && rm -rf /var/lib/apt/lists/*
+# RUN apt-get update && apt-get install --no-install-recommends -y --allow-unauthenticated \
+#      software-properties-common \
+#      && rm -rf /var/lib/apt/lists/*
 
-RUN sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key F6E65AC044F831AC80A06380C8B3A55A6F3EFCDE || sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-key F6E65AC044F831AC80A06380C8B3A55A6F3EFCDE
-RUN sudo add-apt-repository "deb https://librealsense.intel.com/Debian/apt-repo $(lsb_release -cs) main" -u
-RUN apt-get update && apt-get install --no-install-recommends -y --allow-unauthenticated \
-     librealsense2-dkms \
-     librealsense2-utils \
-     librealsense2-dev \
-     librealsense2-dbg \
-     ros-noetic-realsense2-camera \
-     ros-noetic-realsense2-description \
-     && rm -rf /var/lib/apt/lists/*
-
-RUN source ~/.bashrc
+# RUN sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key F6E65AC044F831AC80A06380C8B3A55A6F3EFCDE || sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-key F6E65AC044F831AC80A06380C8B3A55A6F3EFCDE
+# RUN sudo add-apt-repository "deb https://librealsense.intel.com/Debian/apt-repo $(lsb_release -cs) main" -u
+# RUN apt-get update && apt-get install --no-install-recommends -y --allow-unauthenticated \
+#      librealsense2-dkms \
+#      librealsense2-utils \
+#      librealsense2-dev \
+#      librealsense2-dbg \
+#      ros-noetic-realsense2-camera \
+#      ros-noetic-realsense2-description \
+#      && rm -rf /var/lib/apt/lists/*
 
 # install yolov5 requirements
 COPY requirements.txt .
 RUN pip install -r requirements.txt
-
-# RUN pip install gitpython
-# RUN pip install ipython  # interactive notebook
-# RUN pip install matplotlib>=3.2.2
-# RUN pip install numpy>=1.18.5
-# RUN pip install opencv-python>=4.1.1
-# RUN pip install Pillow>=7.1.2
-# RUN pip install psutil  # system resources
-# RUN pip install PyYAML>=5.3.1
-# RUN pip install requests>=2.23.0
-# RUN pip install scipy>=1.4.1
-# RUN pip install thop>=0.1.1  # FLOPs computation
-# RUN pip install torch>=1.7.0  # see https://pytorch.org/get-started/locally (recommended)
-# RUN pip install torchvision>=0.8.1
-# RUN pip install tqdm>=4.64.0
-# RUN pip install tensorboard>=2.4.1
-# RUN pip install pandas>=1.1.4
-# RUN pip install seaborn>=0.11.0
 
 WORKDIR /root
