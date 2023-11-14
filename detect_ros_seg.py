@@ -162,7 +162,7 @@ class YOLOv5:
         # ROS Stuff
         self.bridge = CvBridge()
         self.pub_detections = rospy.Publisher("/yolov5/detections", Detections, queue_size=10)
-        self.service = rospy.Service("detect_objects", detectron2_service_server, self.service_call)
+        self.service = rospy.Service("/detect_objects", detectron2_service_server, self.service_call)
 
         self.dt, self.seen = [0.0, 0.0, 0.0, 0.0], 0
 
@@ -230,83 +230,87 @@ class YOLOv5:
         s = ""
         detections = []
 
-        for i, det in enumerate(pred):  # per image
-            self.seen += 1
+        det = pred[0]
+        
+        self.seen += 1
 
-            im0 = im0s.copy()
+        im0 = im0s.copy()
 
-            s += '%gx%g ' % im.shape[2:]  # print string
-            gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
-            imc = im0s  # for save_crop
-            annotator = Annotator(im0, line_width=self.line_thickness, example=str(self.names))
-            if len(det):
-                if self.retina_masks:
-                    # scale bbox first the crop masks
-                    det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], im0.shape).round()  # rescale boxes to im0 size
-                    masks = process_mask_native(proto[i], det[:, 6:], det[:, :4], im0.shape[:2])  # HWC
-                else:
-                    masks = process_mask(proto[i], det[:, 6:], det[:, :4], im.shape[2:], upsample=True)  # HWC
-                    det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], im0.shape).round()  # rescale boxes to im0 size
+        s += '%gx%g ' % im.shape[2:]  # print string
+        gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
+        imc = im0s  # for save_crop
+        annotator = Annotator(im0, line_width=self.line_thickness, example=str(self.names))
+        if len(det):
+            if self.retina_masks:
+                # scale bbox first the crop masks
+                det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], im0.shape).round()  # rescale boxes to im0 size
+                masks = process_mask_native(proto[0], det[:, 6:], det[:, :4], im0.shape[:2])  # HWC
+            else:
+                masks = process_mask(proto[0], det[:, 6:], det[:, :4], im.shape[2:], upsample=True)  # HWC
+                det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], im0.shape).round()  # rescale boxes to im0 size
+        
+            masks_cpu = masks.cpu().detach().numpy()
             
-                masks_cpu = masks.cpu().detach().numpy()
+        
+            bbox = det[:, :4].cpu().detach().numpy()
+            confidence = det[:, :5].cpu().detach().numpy()
+            class_label = det[:, :6].cpu().detach().numpy()
+
+            for obj_id in range(0, confidence.shape[0]):
                 detection = Detection()
-            
-                bbox = det[:, :4].cpu().detach().numpy()
-                confidence = det[:, :5].cpu().detach().numpy()
-                class_label = det[:, :6].cpu().detach().numpy()
 
                 # ---
-                detection.name = self.names[int(class_label[0][5])]
+                detection.name = self.names[int(class_label[obj_id][5])]
                 # ---
 
                 # ---            
                 bbox_msg = BoundingBox()
-                bbox_msg.ymin = int(bbox[0][0])
-                bbox_msg.xmin = int(bbox[0][1])
-                bbox_msg.ymax = int(bbox[0][2])
-                bbox_msg.xmax = int(bbox[0][3])
+                bbox_msg.ymin = int(bbox[obj_id][0])
+                bbox_msg.xmin = int(bbox[obj_id][1])
+                bbox_msg.ymax = int(bbox[obj_id][2])
+                bbox_msg.xmax = int(bbox[obj_id][3])
                 detection.bbox = bbox_msg
                 # ---
                 # mask
                 # ---
-                mask = masks_cpu[0]
+                mask = masks_cpu[obj_id]
                 mask_ids = np.argwhere(mask.reshape((height * width)) > 0)
                 detection.mask = list(mask_ids.flat)
                 # ---
 
                 # ---
-                detection.score = confidence[0][4]
+                detection.score = confidence[obj_id][4]
                 # ---
                 # 
                 detections.append(detection)      
 
-                # Segments
-                segments = [
-                    scale_segments(im0.shape if self.retina_masks else im.shape[2:], x, im0.shape, normalize=True)
-                    for x in reversed(masks2segments(masks))]
-                    
-                # Print results
-                for c in det[:, 5].unique():
-                    n = (det[:, 5] == c).sum()  # detections per class
-                    s += f"{n} {self.names[int(c)]}{'s' * (n > 1)}, "  # add to string
+            # Segments
+            segments = [
+                scale_segments(im0.shape if self.retina_masks else im.shape[2:], x, im0.shape, normalize=True)
+                for x in reversed(masks2segments(masks))]
+                
+            # Print results
+            for c in det[:, 5].unique():
+                n = (det[:, 5] == c).sum()  # detections per class
+                s += f"{n} {self.names[int(c)]}{'s' * (n > 1)}, "  # add to string
 
-                # Mask plotting
-                annotator.masks(
-                    masks,
-                    colors=[colors(x, True) for x in det[:, 5]],
-                    im_gpu=torch.as_tensor(im0, dtype=torch.float16).to(self.device).permute(2, 0, 1).flip(0).contiguous() /
-                    255 if self.retina_masks else im[i])
+            # Mask plotting
+            annotator.masks(
+                masks,
+                colors=[colors(x, True) for x in det[:, 5]],
+                im_gpu=torch.as_tensor(im0, dtype=torch.float16).to(self.device).permute(2, 0, 1).flip(0).contiguous() /
+                255 if self.retina_masks else im[0])
 
-                # Write results
-                for j, (*xyxy, conf, cls) in enumerate(reversed(det[:, :6])):
-                    seg = segments[j].reshape(-1)  # (n,2) to (n*2)
-                    line = (cls, *seg, conf) if self.save_conf else (cls, *seg)  # label format
+            # Write results
+            for j, (*xyxy, conf, cls) in enumerate(reversed(det[:, :6])):
+                seg = segments[j].reshape(-1)  # (n,2) to (n*2)
+                line = (cls, *seg, conf) if self.save_conf else (cls, *seg)  # label format
 
-                    if self.save_img or self.save_crop or self.view_img:  # Add bbox to image
-                        c = int(cls)  # integer class
-                        label = None if self.hide_labels else (self.names[c] if self.hide_conf else f'{self.names[c]} {conf:.2f}')
-                        annotator.box_label(xyxy, label, color=colors(c, True))
-                        # annotator.draw.polygon(segments[j], outline=colors(c, True), width=3)
+                if self.save_img or self.save_crop or self.view_img:  # Add bbox to image
+                    c = int(cls)  # integer class
+                    label = None if self.hide_labels else (self.names[c] if self.hide_conf else f'{self.names[c]} {conf:.2f}')
+                    annotator.box_label(xyxy, label, color=colors(c, True))
+                    # annotator.draw.polygon(segments[j], outline=colors(c, True), width=3)
                         
         
         ros_detections = Detections()
