@@ -32,25 +32,16 @@ import os
 import sys
 from pathlib import Path
 
-import cv2
 import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 
 import rospy
-from std_msgs.msg import String, Float32MultiArray, Int64
-from sensor_msgs.msg import Image
-from sensor_msgs.msg import RegionOfInterest
-from vision_msgs.msg import Detection2DArray
-from vision_msgs.msg import Detection2D
-from vision_msgs.msg import BoundingBox2D
-from vision_msgs.msg import ObjectHypothesisWithPose
-from geometry_msgs.msg import Pose2D
 from cv_bridge import CvBridge, CvBridgeError
 
-from std_msgs.msg import Header
-from object_detector_msgs.msg import BoundingBox, Detection, Detections
-from object_detector_msgs.srv import detectron2_service_server
+from robokudo_msgs.msg import GenericImgProcAnnotatorAction, GenericImgProcAnnotatorResult
+from sensor_msgs.msg import RegionOfInterest, Image
+from actionlib import SimpleActionServer
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -161,22 +152,13 @@ class YOLOv5:
 
         # ROS Stuff
         self.bridge = CvBridge()
-        self.pub_detections = rospy.Publisher("/yolov5/detections", Detections, queue_size=10)
-        self.service = rospy.Service("/detect_objects", detectron2_service_server, self.service_call)
+        self.server = SimpleActionServer('/object_detector/yolov5', GenericImgProcAnnotatorAction, self.service_call, False)
 
         self.dt, self.seen = [0.0, 0.0, 0.0, 0.0], 0
+        self.server.start()
 
-    def callback_image(self, msg):
-        try:
-            img0 = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-        except CvBridgeError as e:
-            print(e)
-
-        ros_detections = self.infer(img0) 
-        self.pub_detections.publish(ros_detections)   
-
-    def service_call(self, req):
-        rgb = req.image
+    def service_call(self, goal):
+        rgb = goal.rgb
         width, height = rgb.width, rgb.height
         assert width == 640 and height == 480
 
@@ -185,11 +167,15 @@ class YOLOv5:
         except CvBridgeError as e:
             print(e)
 
-        ros_detections = self.infer(img0) 
-        return ros_detections
+        ros_detections = self.infer(img0, rgb.header) 
+
+        if ros_detections.success:
+            self.server.set_succeeded(ros_detections)
+        else:
+            self.server.set_aborted(ros_detections)
 
     @smart_inference_mode()
-    def infer(self, im0s):
+    def infer(self, im0s, rgb_header):
 
         t1 = time_sync()
         height, width, channels = im0s.shape
@@ -255,35 +241,46 @@ class YOLOv5:
             bbox = det[:, :4].cpu().detach().numpy()
             confidence = det[:, :5].cpu().detach().numpy()
             class_label = det[:, :6].cpu().detach().numpy()
-
+            
+            bboxes = []
+            class_names = []
+            confidences = []
+            label_image = np.full((height, width), -1, np.int16)
             for obj_id in range(0, confidence.shape[0]):
-                detection = Detection()
-
-                # ---
-                detection.name = self.names[int(class_label[obj_id][5])]
-                # ---
-
-                # ---            
-                bbox_msg = BoundingBox()
-                bbox_msg.ymin = int(bbox[obj_id][0])
-                bbox_msg.xmin = int(bbox[obj_id][1])
-                bbox_msg.ymax = int(bbox[obj_id][2])
-                bbox_msg.xmax = int(bbox[obj_id][3])
-                detection.bbox = bbox_msg
+                
+                class_names.append(self.names[int(class_label[obj_id][5])])
+    
+                bb = RegionOfInterest()
+                xmin = int(bbox[obj_id][0])
+                ymin = int(bbox[obj_id][1])
+                xmax = int(bbox[obj_id][2])
+                ymax = int(bbox[obj_id][3])
+                bb.x_offset = xmin
+                bb.y_offset = ymin
+                bb.height = ymax - ymin
+                bb.width = xmax - xmin
+                bb.do_rectify = False
+                bboxes.append(bb)
                 # ---
                 # mask
                 # ---
                 mask = masks_cpu[obj_id]
-                mask_ids = np.argwhere(mask.reshape((height * width)) > 0)
-                detection.mask = list(mask_ids.flat)
+                label_image[mask > 0] = obj_id
                 # ---
+                confidences.append(confidence[obj_id][4])
 
-                # ---
-                detection.score = confidence[obj_id][4]
                 # ---
                 # 
-                detections.append(detection)      
+            mask_image = Image(header=rgb_header, height=height, width=width, encoding="16SC1", is_bigendian=0, step=width, data=label_image.tobytes())
+            
+            server_result = GenericImgProcAnnotatorResult()
+            server_result.success = True
+            server_result.bounding_boxes = bboxes
+            server_result.class_names = class_names
+            server_result.class_confidences = confidences
+            server_result.image = mask_image
 
+            
             # Segments
             segments = [
                 scale_segments(im0.shape if self.retina_masks else im.shape[2:], x, im0.shape, normalize=True)
@@ -310,13 +307,11 @@ class YOLOv5:
                     c = int(cls)  # integer class
                     label = None if self.hide_labels else (self.names[c] if self.hide_conf else f'{self.names[c]} {conf:.2f}')
                     annotator.box_label(xyxy, label, color=colors(c, True))
-                    # annotator.draw.polygon(segments[j], outline=colors(c, True), width=3)
-                        
+                    # annotator.draw.polygon(segments[j], outline=colors(c, True), width=3)           
+        else:
+            server_result = GenericImgProcAnnotatorResult()
+            server_result.success = False
         
-        ros_detections = Detections()
-        ros_detections.width, ros_detections.height = 640, 480
-        ros_detections.detections = detections
-
         # Stream results
         t4 = time_sync()
         self.dt[2] += t4 - t1
@@ -331,7 +326,7 @@ class YOLOv5:
         rospy.loginfo(f'Inference ({t3 - t2:.3f}s)')
         rospy.loginfo(f'Callback ({t4 - t1:.3f}s)')    
 
-        return ros_detections    
+        return server_result    
 
 def parse_opt():
     parser = argparse.ArgumentParser()
